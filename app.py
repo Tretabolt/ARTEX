@@ -3,6 +3,8 @@ import uuid
 import threading
 import time
 from datetime import datetime
+import requests
+from dotenv import load_dotenv
 from modules.subdomains import SubdomainEnumerator
 from modules.real_ip_discovery import RealIPDiscovery
 from modules.port_scanner import PortScanner
@@ -14,10 +16,14 @@ from modules.FastAnalyst import FastSecurityAnalyst # Import FastSecurityAnalyst
 from modules.AI_analyst import AIAnalyst
 from utils.reporting import ReportGenerator
 from utils.helpers import validate_domain, sanitize_domain
+from utils.documents import MAX_DOCUMENT_BYTES, MAX_INSTRUCTION_CHARS, extract_document_text
 import os
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+app.config['MAX_CONTENT_LENGTH'] = MAX_DOCUMENT_BYTES + 128 * 1024
 
 @app.template_filter('datetimeformat')
 def datetimeformat(value, format='%Y-%m-%d %H:%M:%S'):
@@ -39,6 +45,52 @@ def inject_now():
 @app.route('/')
 def index():
     return render_template('scan.html')
+
+@app.route('/documents')
+def documents():
+    return render_template(
+        'documents.html',
+        groq_available=bool(os.getenv('GROQ_API_KEY')),
+        max_instruction_chars=MAX_INSTRUCTION_CHARS
+    )
+
+@app.route('/api/documents/analyze', methods=['POST'])
+def analyze_document():
+    if not os.getenv('GROQ_API_KEY'):
+        return jsonify({'error': 'Configure GROQ_API_KEY and restart the app to use document analysis.'}), 503
+
+    instruction = request.form.get('instruction', '').strip()
+    upload = request.files.get('document')
+    if not instruction:
+        return jsonify({'error': 'Enter what you want done with the document.'}), 400
+    if len(instruction) > MAX_INSTRUCTION_CHARS:
+        return jsonify({'error': f'The request must be {MAX_INSTRUCTION_CHARS:,} characters or fewer.'}), 400
+    if upload is None or not upload.filename:
+        return jsonify({'error': 'Choose a document to analyze.'}), 400
+
+    document_bytes = upload.stream.read(MAX_DOCUMENT_BYTES + 1)
+    if len(document_bytes) > MAX_DOCUMENT_BYTES:
+        return jsonify({'error': 'Documents must be 8 MB or smaller.'}), 413
+
+    try:
+        document_text = extract_document_text(upload.filename, document_bytes)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+
+    try:
+        answer = AIAnalyst().analyze_document(instruction, document_text, upload.filename)
+    except requests.RequestException:
+        app.logger.exception('Document analysis request to Groq failed')
+        return jsonify({'error': 'The AI provider could not process the document. Try again later.'}), 502
+    except RuntimeError:
+        app.logger.exception('Document analysis returned an invalid response')
+        return jsonify({'error': 'The AI provider returned an invalid response. Try again.'}), 502
+
+    return jsonify({'answer': answer, 'filename': upload.filename})
+
+@app.errorhandler(413)
+def request_too_large(_error):
+    return jsonify({'error': 'Documents must be 8 MB or smaller.'}), 413
 
 @app.route('/start_scan', methods=['POST'])
 def start_scan():

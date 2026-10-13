@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block title %}Documents | ARTEX{% endblock %}
+
+{% block extra_css %}
+<style>
+    .documents-shell [hidden] {
+        display: none !important;
+    }
+
+    .documents-shell {
+        max-width: 920px;
+        margin: 0 auto;
+    }
+
+    .documents-header {
+        border-bottom: 1px solid #dbe3e8;
+        padding-bottom: 1.25rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .document-dropzone {
+        border: 1px dashed #94a3b8;
+        border-radius: 6px;
+        background: #f8fafc;
+        min-height: 112px;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color .15s ease, background-color .15s ease;
+    }
+
+    .document-dropzone:hover,
+    .document-dropzone:focus-within,
+    .document-dropzone.is-dragging {
+        border-color: var(--primary-color);
+        background: var(--primary-light);
+    }
+
+    .document-dropzone input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+    }
+
+    .document-answer {
+        overflow-wrap: anywhere;
+        line-height: 1.65;
+        margin: 0;
+    }
+
+    .document-answer pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        padding: .75rem;
+        background: #f1f5f9;
+        border-radius: 4px;
+    }
+
+    .document-answer > :last-child {
+        margin-bottom: 0;
+    }
+
+    .documents-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .document-sheet {
+        width: min(100%, 793px);
+        aspect-ratio: 210 / 297;
+        margin: 0 auto;
+        padding: clamp(1.5rem, 6vw, 3rem);
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #dbe3e8;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, .12);
+    }
+
+    .document-sheet-content {
+        max-width: 100%;
+    }
+
+    @media (max-width: 575px) {
+        .document-sheet {
+            padding: 1.25rem;
+        }
+    }
+
+    @media print {
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        body {
+            background: #fff !important;
+        }
+
+        body * {
+            visibility: hidden !important;
+        }
+
+        #answerPanel,
+        #answerPanel * {
+            visibility: visible !important;
+        }
+
+        #answerPanel {
+            position: absolute;
+            inset: 0;
+            width: 210mm;
+            height: 297mm;
+            margin: 0;
+            padding: 20mm;
+            border: 0;
+            box-shadow: none;
+            overflow: visible;
+        }
+
+        #answerPanel .result-toolbar {
+            display: none !important;
+        }
+
+        #answerPanel .document-sheet-content {
+            overflow: visible;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="documents-shell">
+    <header class="documents-header d-flex justify-content-between align-items-end gap-3 flex-wrap">
+        <div>
+            <p class="text-uppercase small fw-semibold text-primary mb-1">ARTEX / WORKSPACE</p>
+            <h1 class="h2 fw-bold mb-1">Document assistant</h1>
+            <p class="text-muted mb-0">Upload a document and describe the task you need done.</p>
+        </div>
+        {% if groq_available %}
+        <span class="badge text-bg-success">AI ready</span>
+        {% else %}
+        <span class="badge text-bg-warning">AI not configured</span>
+        {% endif %}
+    </header>
+
+    <div class="documents-grid">
+        <section aria-labelledby="request-heading">
+            <div class="card card-modern">
+                <div class="card-body p-4">
+                    <h2 id="request-heading" class="h5 fw-semibold mb-4">New document task</h2>
+                    <form id="documentForm">
+                        <div class="mb-4">
+                            <label for="documentFile" class="form-label fw-medium">Document</label>
+                            <label class="document-dropzone w-100 p-3" for="documentFile">
+                                <span>
+                                    <i class="bi bi-file-earmark-arrow-up fs-4 text-primary d-block mb-1"></i>
+                                    <span id="fileName" class="fw-medium">Choose a file or drop it here</span>
+                                    <span class="d-block text-muted small mt-1">PDF, DOCX, TXT, Markdown, CSV or JSON · up to 8 MB · up to 200,000 extracted characters</span>
+                                </span>
+                                <input id="documentFile" name="document" type="file" accept=".pdf,.docx,.txt,.md,.csv,.json" required>
+                            </label>
+                        </div>
+
+                        <div class="mb-4">
+                            <label for="instruction" class="form-label fw-medium">What should the assistant do?</label>
+                            <textarea id="instruction" name="instruction" class="form-control form-control-modern" rows="5" maxlength="{{ max_instruction_chars }}" placeholder="Summarize the key points, list the deadlines, and flag any unusual terms." required></textarea>
+                            <div class="form-text">Request: up to {{ '{:,}'.format(max_instruction_chars) }} characters. AI response: up to 16,384 tokens.</div>
+                        </div>
+
+                        <div class="alert alert-light border small" role="note">
+                            <i class="bi bi-shield-lock me-1"></i>
+                            Document text is sent to Groq for processing and is not saved by ARTEX. Do not upload sensitive material unless you are authorized to share it.
+                        </div>
+
+                        {% if not groq_available %}
+                        <div class="alert alert-warning small" role="status">
+                            Set <code>GROQ_API_KEY</code> in the environment and restart ARTEX to enable document tasks.
+                        </div>
+                        {% endif %}
+
+                        <button id="analyzeButton" class="btn btn-modern" type="submit" {% if not groq_available %}disabled{% endif %}>
+                            <i class="bi bi-send me-2"></i>Run task
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <section aria-labelledby="answer-heading" aria-live="polite">
+            <article id="answerPanel" class="document-sheet" hidden>
+                <div class="result-toolbar d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h2 id="answer-heading" class="h5 fw-semibold mb-1">Result</h2>
+                        <div id="answerStatus" class="small text-muted" hidden></div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button id="printAnswer" class="btn btn-sm btn-outline-secondary" type="button" title="Print or save as PDF" aria-label="Print or save as PDF">
+                            <i class="bi bi-printer"></i>
+                        </button>
+                        <button id="copyAnswer" class="btn btn-sm btn-outline-secondary" type="button" title="Copy result" aria-label="Copy result">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="answerText" class="document-answer document-sheet-content"></div>
+            </article>
+            <div id="emptyAnswer" class="text-muted small border-start border-3 ps-3 py-1">
+                The response will appear here.
+            </div>
+        </section>
+    </div>
+</main>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+<script>
+    const documentForm = document.getElementById('documentForm');
+    const fileInput = document.getElementById('documentFile');
+    const fileName = document.getElementById('fileName');
+    const analyzeButton = document.getElementById('analyzeButton');
+    const answerPanel = document.getElementById('answerPanel');
+    const answerText = document.getElementById('answerText');
+    const answerStatus = document.getElementById('answerStatus');
+    const dropzone = document.querySelector('.document-dropzone');
+    let answerContent = '';
+
+    fileInput.addEventListener('change', () => {
+        fileName.textContent = fileInput.files[0]?.name || 'Choose a file or drop it here';
+    });
+
+    dropzone.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        dropzone.classList.add('is-dragging');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('is-dragging');
+    });
+
+    dropzone.addEventListener('drop', (event) => {
+        event.preventDefault();
+        dropzone.classList.remove('is-dragging');
+        const file = event.dataTransfer.files[0];
+        if (!file) return;
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        fileInput.files = transfer.files;
+        fileName.textContent = file.name;
+    });
+
+    documentForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        analyzeButton.disabled = true;
+        analyzeButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Working...';
+        answerPanel.hidden = false;
+        document.getElementById('emptyAnswer').hidden = true;
+        answerText.textContent = '';
+        answerStatus.hidden = false;
+        answerStatus.textContent = 'Sending document for analysis...';
+
+        try {
+            const response = await fetch('/api/documents/analyze', {
+                method: 'POST',
+                body: new FormData(documentForm)
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'The request failed.');
+            answerContent = result.answer;
+            answerText.innerHTML = DOMPurify.sanitize(marked.parse(answerContent));
+            answerStatus.textContent = result.filename;
+            answerPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (error) {
+            answerContent = error.message || 'The request failed. Try again.';
+            answerText.textContent = answerContent;
+            answerStatus.textContent = 'Could not complete the task';
+        } finally {
+            answerStatus.hidden = false;
+            analyzeButton.disabled = false;
+            analyzeButton.innerHTML = '<i class="bi bi-send me-2"></i>Run task';
+        }
+    });
+
+    document.getElementById('copyAnswer').addEventListener('click', async () => {
+        await navigator.clipboard.writeText(answerContent);
+    });
+
+    document.getElementById('printAnswer').addEventListener('click', () => {
+        window.print();
+    });
+</script>
+{% endblock %}

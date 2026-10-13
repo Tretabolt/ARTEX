@@ -21,6 +21,7 @@ ARTEX is an advanced web application security analysis platform that automates r
 
 - **Intelligent Analysis**:
   - AI-powered security recommendations (Groq/Llama3 integration)
+  - Document assistant for custom tasks on PDF, DOCX, TXT, Markdown, CSV and JSON files
   - Dual-perspective reports (Owner vs Hunter views)
   - Automated risk scoring
 
@@ -60,34 +61,17 @@ pip install -r requirements.txt
 ```
 Configuration
 
-U need to add your GROQ api key in the AI_analyst.py script (U can do this here : https://console.groq.com/keys ) , here :
+Create a Groq key at https://console.groq.com/keys, then copy `.env.example` to `.env` and replace the placeholder with your new key:
 
 ```bash
-
-# AI_analyst.py
-import requests
-import json
-from typing import Dict, List, Optional
-import logging
-from datetime import datetime
-import time
-
-class AIAnalyst:
-    def __init__(self, groq_api_key: str = None):
-        """
-        Initialize the AI analyst with Groq API integration
-        
-        Args:
-            groq_api_key: Optional Groq API key (if not provided, will use rule-based analysis only)
-        """
-        self.groq_api_key = "Add here your GROQ_API_KEY"
-        self.logger = logging.getLogger(__name__)
-        
-        # Set up logging
-        logging.basicConfig(level=logging.INFO)
-        ......
-        
+cp .env.example .env
+# Edit .env and set GROQ_API_KEY to your key
+python app.py
 ```
+
+Restart the app after changing `.env`. If no key is set, document tasks stay disabled and security scans use rule-based analysis.
+
+The **Documents** page accepts files up to 8 MB and 200,000 extracted characters, with task instructions up to 20,000 characters and responses up to 16,384 tokens. Responses use clean Markdown formatting. Extracted text is sent to Groq for processing and is not stored by ARTEX. Set the key before starting the app to enable document tasks.
 
 Usage
 Web Interface
